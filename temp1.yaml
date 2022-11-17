@@ -1,0 +1,152 @@
+#####################
+# Description section
+#####################
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  VPC with 2 public subnets in different Availability Zones, an Auto Scaling Group with a minimum
+  of 2 and a maximum of 4 Amazon Linux 2 instances (t2.micro or t3.micro). The EC2 instances must
+  have Nginx installed using a User Data script and a public IP assigned. There instances must belong
+  to a Security Group with an inbound rule allowing access through port 80 from any IP. 
+
+####################
+# Parameters section
+####################
+Parameters:
+  LaunchTemplateVersionNumber:
+    Default: 1
+    Type: String
+
+###################
+# Resources section
+###################
+Resources:
+# VPC
+  MyVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      CidrBlock: 10.0.0.0/16
+      Tags:
+        - Key: Name
+          Value: CP6VPC
+    
+  # Internet Gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref MyVPC
+      InternetGatewayId: !Ref InternetGateway
+  DefaultRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  # Public subnets
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: 10.0.0.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: Public Subnet 1
+      VpcId: !Ref MyVPC
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: Public Subnet 2
+      VpcId: !Ref MyVPC
+
+  # Public route table
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+      Tags:
+        - Key: Name
+          Value: Public Route Table
+
+  # Public route
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  # Public route table association
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+
+  # Security group
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: 'MyVPC'
+    Properties:
+      GroupDescription: allow http
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+      - IpProtocol: 'tcp'
+        CidrIp: 0.0.0.0/0
+        FromPort: 80
+        ToPort: 80
+
+  # Launch
+  LaunchTemplate:
+      Type: 'AWS::EC2::LaunchTemplate'
+      Properties:
+        LaunchTemplateName: !Sub '${AWS::StackName}-launch-template-for-auto-scaling'
+        LaunchTemplateData:
+          NetworkInterfaces:
+            - DeviceIndex: 0
+              AssociatePublicIpAddress: true
+              Groups:
+                - !Ref InstanceSecurityGroup
+              DeleteOnTermination: true
+          Placement:
+            Tenancy: default
+          ImageId: ami-0b0dcb5067f052a63
+          InstanceType: t2.micro
+          UserData:
+            'Fn::Base64':
+              !Sub |
+                #!/bin/bash
+                sudo yum update -y
+                sudo amazon-linux-extras install nginx1 -y 
+                sudo systemctl enable nginx
+                sudo systemctl start nginx
+
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      MinSize: '2'
+      MaxSize: '4'
+      DesiredCapacity: '2'
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !Ref LaunchTemplateVersionNumber
+      VPCZoneIdentifier:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
