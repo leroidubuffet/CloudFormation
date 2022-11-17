@@ -1,0 +1,258 @@
+# CloudFormation template notes with examples
+
+######################
+# General architecture
+######################
+# 1. Network
+# 2. Database
+# 3. Resources
+
+##################################
+# CloudFormation template sections
+##################################
+# Template version. Latest is 2010-09-09. (Optional) 
+# Description: Enables you to include arbitrary comments about your template. (Optional)
+# Metadata. Arbitraty JSON or YAML objetcs that provide info about the template. (Optional)
+# Parameters: Parameters enable you to input custom values to your template each time 
+# you create or update a stack. (Optional)
+# Mappings: Collection of Key-Value pairs which can be used to set values. (Optional)
+# Conditions. Statements that define when a resource is created or when a property is defined. (Optional)
+# Transform. Transforms that CloudFormation uses to process this stack. (Optional)
+# Resources: Declares the AWS resources that you want to include in the stack. (Required)
+# Outputs: Declares output values that you can import into other stacks, return in response, 
+# or view on the AWS CloudFormation console. (Optional)
+
+##############
+# CLI commands
+##############
+# LAUNCH aws cloudformation create-stack --stack-name  <demo-stack> --template-body file://demo.yaml
+# DELETE aws cloudformation delete-stack --stack-name <demo-stack>
+
+#########
+# Sources
+#########
+# https://www.observian.com/blog/aws-cloudformation-101-introduction
+# https://octopus.com/blog/ami-mappings-cloudformation
+# https://towardsaws.com/creating-an-auto-scaling-group-in-aws-cloudformation-761b0f8c6364
+
+
+# Version
+AWSTemplateFormatVersion: 2010-09-09
+# Description. Optional
+Description: >-
+  Network Template: Sample template that creates a VPC with DNS and public IPs enabled.
+
+# Parameters example:
+Parameters:
+  VpcName:
+    Description: "Enter name of VPC"
+    Type: String
+    ConstraintDescription: must be the VPC Id of an existing Virtual Private Cloud.
+  VpcCidr:
+    Description: "Enter CIDR block for VPC.  Ex. 10.0.0.0/16"
+    Type: String
+    Default: 10.0.0.0/16
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+  AZ:
+    Description: "Choose the Availability zone"
+    Type: AWS::EC2::AvailabilityZone::Name
+  PubSubnetCidr:
+    Description: "Enter CIDR Block for Subnet.  Ex. 10.0.1.0/24"
+    Type: String
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+  KeyName:
+    Description: The EC2 Key Pair to allow SSH access to the instances
+    Type: 'AWS::EC2::KeyPair::KeyName'
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+  LaunchTemplateVersionNumber:
+    Default: 1
+    Type: String
+
+# Mappings example
+Mappings:
+  RegionAMIMap:
+    us-east-1:
+      AmazonLinux: ami-1853ac65
+    us-east-2:
+      AmazonLinux: ami-25615740
+    us-west-1:
+      AmazonLinux: ami-bf5540df
+    us-west-2:
+      AmazonLinux: ami-d874e0a0
+    ap-south-1:
+      AmazonLinux: ami-7c87d913
+    ap-northeast-1:
+      AmazonLinux: ami-a77c30c1
+    ap-northeast-2:
+      AmazonLinux: ami-5e1ab730
+    ap-southeast-1:
+      AmazonLinux: ami-e2adf99e
+    ap-southeast-2:
+      AmazonLinux: ami-43874721
+    ca-central-1:
+      AmazonLinux: ami-5b55d23f
+    eu-central-1:
+      AmazonLinux: ami-ac442ac3
+    eu-west-1:
+      AmazonLinux: ami-3bfab942
+    eu-west-2:
+      AmazonLinux: ami-dff017b8
+    eu-west-3:
+      AmazonLinux: ami-4f55e332
+    sa-east-1:
+      AmazonLinux: ami-5339733f
+
+
+# Resources
+
+#####################
+# Resources structure
+#####################
+# Logical resource-ID we give for easy reference. It could be any name.
+# Description is just an expanded explanation of the resource.
+# Type specifies the type of AWS resource this code is building.
+# Properties are the special attributes that qualify an AWS resource to the required setting
+
+# VPC
+MyVPC:
+  Description: Name of new VPC
+  Type: AWS::EC2::VPC
+  Properties:
+    CidrBlock: !Ref VpcCidr #as defined in parameters above
+    EnableDnsSupport: 'true'
+    EnableDnsHostnames: 'true'
+    Tags:
+      - Key: Name
+        Value: !Ref VpcName
+
+# Public subnet
+PubSubnet:  Description: Public Subnet
+  Type: AWS::EC2::Subnet
+  Properties:
+    CidrBlock: !Ref PubSubnetCidr #as defined in parameters above
+    AvailabilityZone: !Ref AZ #as defined in parameters above
+    MapPublicIpOnLaunch: true
+    VpcId: !Ref MyVPC #as defined in parameters above
+    Tags:
+      - Key: Name
+        Value: !Join
+        - '_'
+        - - !Ref MyVPC
+          - "Public_Subnet"
+
+# Public route table
+PubRoute:
+  Type: AWS::EC2::RouteTable
+  Properties:
+    VpcId: !Ref MyVPC
+    Tags:
+      - Key: Name
+        Value: Public Route Table
+
+# Public route table association
+PubSubnetAssociation:
+  Type: AWS::EC2::SubnetRouteTableAssociation
+  Properties:
+    SubnetId: !Ref PubSubnet
+    RouteTableId: !Ref PubRoute
+
+# Internet Gateway
+IGW:
+  Type: AWS::EC2::InternetGateway
+AttachGateway:
+  Type: AWS::EC2::VPCGatewayAttachment
+  Properties:
+    VpcId: !Ref MyVPC
+    InternetGatewayId: !Ref IGW
+DefaultRoute:
+  Type: AWS::EC2::Route
+  Properties:
+    RouteTableId: !Ref PubRoute
+    DestinationCidrBlock: 0.0.0.0/0
+    GatewayId: !Ref IGW
+
+# Security group
+SecurityGroup:
+  Type: AWS::EC2::SecurityGroup
+  DependsOn: 'MyVPC'
+  Properties:
+    GroupDescription: allow ssh and http
+    VpcId: !Ref MyVPC
+    SecurityGroupIngress:
+    -
+      CidrIp: 0.0.0.0/0
+      FromPort: 22
+      IpProtocol: 'tcp'
+      ToPort: 22
+    -
+      CidrIp: 0.0.0.0/0
+      FromPort: 80
+      IpProtocol: 'tcp'
+      ToPort: 80
+
+# EC2 instance with Nginx and user data script 
+EC2Instance:
+  Type: AWS::EC2::Instance
+  Properties:
+    ImageId: ami-0b0dcb5067f052a63
+    InstanceType: t2.micro
+    SubnetId: !Ref PubSubnet
+    Tags:
+    - Key: Name
+      Value: nginx_web_server
+    UserData:
+      'Fn::Base64':
+        !Sub |
+          #!/bin/bash
+          sudo yum update -y
+          sudo amazon-linux-extras install nginx1 -y 
+          sudo systemctl enable nginx
+          sudo systemctl start nginx
+    KeyName: !Ref KeyName
+    SecurityGroupIds:
+    - !Ref SecurityGroup
+
+# EC2 instance with Apache and user data script
+EC2Instance:
+  Type: AWS::EC2::Instance
+  Properties:
+    ImageId: !FindInMap [RegionAMIMap, !Ref 'AWS::Region', AmazonLinux]
+    InstanceType: t2.micro
+    SubnetId: !Ref PubSubnet
+    Tags:
+    - Key: Name
+      Value: apache_web_server
+    UserData:
+      'Fn::Base64':
+        !Sub |
+          #!/bin/bash
+          yum update -y
+          yum install -y httpd
+          chkconfig httpd on
+          service httpd start
+          echo "Success! Welcome to the world of Cloudformation" > /var/www/html/index.html
+    KeyName: !Ref KeyName
+    SecurityGroupIds:
+    - !Ref SecurityGroup
+
+
+# EC2 instance and elastic IP
+Resources:
+MyEC2Instance:
+  Type: "AWS::EC2::Instance"
+  Properties:
+    ImageId: "ami-0f7919c33c90f5b58"
+    InstanceType: t2.nano
+    KeyName: testkey
+    MyEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+    InstanceId: !Ref MyEC2Instance
+
+# Outputs example
+Outputs: 
+  WebServerURL:
+    Value: !Join ["", ["http://", !GetAtt EC2Instance.PublicDnsName, ":80"]]
+    Description: URL for the nginx web server
