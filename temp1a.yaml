@@ -19,6 +19,21 @@ Parameters:
     Default: 1
     Type: String
 
+  VpcCidr:
+    Default: 10.0.0.0/16
+    Description: Please enter the IP range (CIDR notation) for this VPC
+    Type: String
+
+  PublicSubnet1CIDR:
+    Default: 10.0.0.0/24
+    Description: Please enter the IP range (CIDR notation) for the public subnet 1
+    Type: String
+
+  PublicSubnet2CIDR:
+    Default: 10.0.1.0/24
+    Description: Please enter the IP range (CIDR notation) for the public subnet 2
+    Type: String
+
 ###################
 # Resources section
 ###################
@@ -29,7 +44,8 @@ Resources:
     Properties:
       EnableDnsSupport: true
       EnableDnsHostnames: true
-      CidrBlock: 10.0.0.0/16
+      CidrBlock: !Ref VpcCidr
+      InstanceTenancy: default
       Tags:
         - Key: Name
           Value: CP6VPC
@@ -54,7 +70,7 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       AvailabilityZone: !Select [ 0, !GetAZs '' ]
-      CidrBlock: 10.0.0.0/24
+      CidrBlock: !Ref PublicSubnet1CIDR
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
@@ -65,7 +81,7 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       AvailabilityZone: !Select [ 1, !GetAZs '' ]
-      CidrBlock: 10.0.1.0/24
+      CidrBlock: !Ref PublicSubnet2CIDR
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
@@ -84,7 +100,6 @@ Resources:
   # Public route
   PublicRoute:
     Type: AWS::EC2::Route
-    DependsOn: InternetGateway
     Properties:
       RouteTableId: !Ref PublicRouteTable
       DestinationCidrBlock: 0.0.0.0/0
