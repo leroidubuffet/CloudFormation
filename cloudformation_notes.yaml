@@ -35,6 +35,7 @@
 # https://octopus.com/blog/ami-mappings-cloudformation
 # https://towardsaws.com/creating-an-auto-scaling-group-in-aws-cloudformation-761b0f8c6364
 # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/walkthrough-crossstackref.html
+# https://blog.devgenius.io/how-to-create-a-vpc-and-auto-scaling-group-in-cloudformation-e3211b8ded5a
 
 
 # Version
